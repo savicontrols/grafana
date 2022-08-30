@@ -142,7 +142,7 @@ class UnConnectedExploreToolbar extends PureComponent<Props> {
                 aria-label="Copy shortened link"
               />
             ),
-            !datasourceMissing && (
+            !datasourceMissing && false && (
               <DataSourcePicker
                 key={`${exploreId}-ds-picker`}
                 onChange={this.onChangeDatasource}
