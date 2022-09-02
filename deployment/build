@@ -1,0 +1,128 @@
+#!/bin/bash
+
+set -e
+
+ORIG_GRAFANA_VERSION="9.1.1"
+SAVI_GRAFANA_VERSION=${SAVI_GRAFANA_VERSION:-2}
+
+LINUX_LINK="https://dl.grafana.com/oss/release/grafana-${ORIG_GRAFANA_VERSION}.linux-amd64.tar.gz"
+LINUX_SHASUM="c356a5a39ecd3ec26da0cfbb4276de53c1c206e6e2f600e64c995bc5d9da7e74"
+
+DARWIN_LINK="https://dl.grafana.com/oss/release/grafana-${ORIG_GRAFANA_VERSION}.darwin-amd64.tar.gz"
+DARWIN_SHASUM="6974b738b436840f7af8adc141d8bec557347ceaa36685460f6baa2c91eab641"
+
+# Cleanup
+OLD_PWD=$(pwd)
+TEMP_FILES=( )
+TEMP_DIRS=( )
+cleanup() {
+    cd "${OLD_PWD}"
+    rm -f "${TEMP_FILES[@]}"
+    rm -rf "${TEMP_DIRS[@]}"
+}
+trap cleanup 0
+
+# If any errors occur, report them and exit the script
+error() {
+    local script="$0"
+    local parent_lineno="$1"
+    local message="$2"
+    local code="${3:-1}"
+    if [[ -n "$message" ]] ; then
+        echo "Error in ${script} on or near line ${parent_lineno}: ${message}; exiting with status ${code}"
+    else
+        echo "Error in ${script} on or near line ${parent_lineno}; exiting with status ${code}"
+    fi
+    exit "${code}"
+}
+trap 'error ${LINENO}' ERR
+
+# resolve the absolute script path
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+    DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+SCRIPT_FILE=`basename $BASH_SOURCE`
+
+cd "${SCRIPT_DIR}/.."
+DEST_DIR="${SCRIPT_DIR}/dist"
+
+OS=$(uname -s)
+OS=${OS,,}
+
+ARCH=$(uname -m)
+ARCH=${ARCH,,}
+
+case "${ARCH}" in
+    x86_64)
+        ARCH="amd64"
+        case "${OS}" in
+            linux)
+                DISTRO_LINK="${LINUX_LINK}"
+                DISTRO_SHASUM="${LINUX_SHASUM}"
+                ;;
+            darwin)
+                DISTRO_LINK="${DARWIN_LINK}"
+                DISTRO_SHASUM="${DARWIN_SHASUM}"
+                ;;
+            *)
+                echo "Invalid os: ${OS}"
+                exit 1
+                ;;
+        esac
+    ;;
+
+    *)
+        echo "Invalid arch: ${ARCH}"
+        exit 1
+        ;;
+esac
+
+echo "OS=${OS}"
+echo "ARCH=${ARCH}"
+echo "DISTRO_LINK=${DISTRO_LINK}"
+echo "DISTRO_SHASUM=${DISTRO_SHASUM}"
+
+echo "running internationalization"
+yarn i18n:compile
+
+echo "running webpack"
+NODE_ENV=production yarn webpack --config scripts/webpack/webpack.prod.js
+
+WORK_DIR=$(mktemp -d)
+TEMP_DIRS+=( "${WORK_DIR}" )
+
+echo "WORKDIR=${WORK_DIR}"
+DISTRO_TAR="${WORK_DIR}/distro.tgz"
+
+echo "downloading distro ${DISTRO_LINK}"
+wget -O "${DISTRO_TAR}" "${DISTRO_LINK}"
+
+echo "checking distro"
+SHASUM=$(shasum -a 256 "${DISTRO_TAR}" | awk '{print $1}')
+if [ "${SHASUM}" != "${DISTRO_SHASUM}" ]; then
+
+    echo "${SHASUM} != ${DISTRO_SHASUM}"
+    echo "corrupted download. exiting"
+    exit 1
+fi
+
+echo "extracting distro"
+DISTRO_DIR="${WORK_DIR}/distro"
+mkdir -p "${DISTRO_DIR}"
+tar xzf "${WORK_DIR}/distro.tgz" -C "${DISTRO_DIR}" --strip-components=1 --exclude="public"
+
+echo "copying public folder"
+rsync -a public/ "${DISTRO_DIR}/public"
+
+DEST_FILE="${DEST_DIR}/grafana-${ORIG_GRAFANA_VERSION}-savi-${SAVI_GRAFANA_VERSION}.${OS}-${ARCH}.tar.gz"
+
+echo "archiving release at ${DEST_FILE}"
+mkdir -p "${DEST_DIR}"
+tar czf "${DEST_FILE}" -C "${DISTRO_DIR}" .
+
+echo "complete"
