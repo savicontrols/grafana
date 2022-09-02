@@ -125,7 +125,7 @@ export class AppWrapper extends React.Component<AppWrapperProps, AppWrapperState
                   <ModalsProvider>
                     <GlobalStyles />
                     {this.commandPaletteEnabled() && <CommandPalette />}
-                    <div className="grafana-app hide-sidemenu">
+                    <div className="grafana-app sidemenu-hidden">
                       <Router history={locationService.getHistory()}>
                         {this.renderNavBar()}
                         <AppChrome>
