@@ -5,10 +5,10 @@ set -e
 ORIG_GRAFANA_VERSION="9.1.1"
 SAVI_GRAFANA_VERSION=${SAVI_GRAFANA_VERSION:-2}
 
-LINUX_LINK="https://dl.grafana.com/oss/release/grafana-${ORIG_GRAFANA_VERSION}.linux-amd64.tar.gz"
+LINUX_URL="https://dl.grafana.com/oss/release/grafana-${ORIG_GRAFANA_VERSION}.linux-amd64.tar.gz"
 LINUX_SHASUM="c356a5a39ecd3ec26da0cfbb4276de53c1c206e6e2f600e64c995bc5d9da7e74"
 
-DARWIN_LINK="https://dl.grafana.com/oss/release/grafana-${ORIG_GRAFANA_VERSION}.darwin-amd64.tar.gz"
+DARWIN_URL="https://dl.grafana.com/oss/release/grafana-${ORIG_GRAFANA_VERSION}.darwin-amd64.tar.gz"
 DARWIN_SHASUM="6974b738b436840f7af8adc141d8bec557347ceaa36685460f6baa2c91eab641"
 
 # Cleanup
@@ -52,21 +52,21 @@ cd "${SCRIPT_DIR}/.."
 DEST_DIR="${SCRIPT_DIR}/dist"
 
 OS=$(uname -s)
-OS=${OS,,}
+OS=$(echo "${OS}" | awk '{print tolower($0)}')
 
 ARCH=$(uname -m)
-ARCH=${ARCH,,}
+ARCH=$(echo "${ARCH}" | awk '{print tolower($0)}')
 
 case "${ARCH}" in
     x86_64)
         ARCH="amd64"
         case "${OS}" in
             linux)
-                DISTRO_LINK="${LINUX_LINK}"
+                DISTRO_URL="${LINUX_URL}"
                 DISTRO_SHASUM="${LINUX_SHASUM}"
                 ;;
             darwin)
-                DISTRO_LINK="${DARWIN_LINK}"
+                DISTRO_URL="${DARWIN_URL}"
                 DISTRO_SHASUM="${DARWIN_SHASUM}"
                 ;;
             *)
@@ -84,14 +84,18 @@ esac
 
 echo "OS=${OS}"
 echo "ARCH=${ARCH}"
-echo "DISTRO_LINK=${DISTRO_LINK}"
+echo "DISTRO_URL=${DISTRO_URL}"
 echo "DISTRO_SHASUM=${DISTRO_SHASUM}"
+
+echo "installing npm packages"
+yarn install --immutable
 
 echo "running internationalization"
 yarn i18n:compile
 
 echo "running webpack"
-NODE_ENV=production yarn webpack --config scripts/webpack/webpack.prod.js
+# export NODE_OPTIONS="--max-old-space-size=8192"
+NODE_OPTIONS="--max-old-space-size=8192" NODE_ENV=production yarn webpack --config scripts/webpack/webpack.prod.js
 
 WORK_DIR=$(mktemp -d)
 TEMP_DIRS+=( "${WORK_DIR}" )
@@ -99,8 +103,8 @@ TEMP_DIRS+=( "${WORK_DIR}" )
 echo "WORKDIR=${WORK_DIR}"
 DISTRO_TAR="${WORK_DIR}/distro.tgz"
 
-echo "downloading distro ${DISTRO_LINK}"
-wget -O "${DISTRO_TAR}" "${DISTRO_LINK}"
+echo "downloading distro ${DISTRO_URL}"
+curl -o "${DISTRO_TAR}" "${DISTRO_URL}"
 
 echo "checking distro"
 SHASUM=$(shasum -a 256 "${DISTRO_TAR}" | awk '{print $1}')
